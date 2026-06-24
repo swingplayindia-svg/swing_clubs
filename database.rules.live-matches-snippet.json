@@ -1,0 +1,30 @@
+{
+  "liveMatches": {
+    "$matchId": {
+      ".read": "auth != null",
+      "meta": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.child('scorekeeperUid').exists() || data.child('scorekeeperUid').val() == null || data.child('scorekeeperUid').val() == auth.uid)"
+      },
+      "events": {
+        ".read": "auth != null",
+        "$eventId": {
+          ".write": "auth != null && (!root.child('liveMatches').child($matchId).child('meta').child('scorekeeperUid').exists() || root.child('liveMatches').child($matchId).child('meta').child('scorekeeperUid').val() == null || root.child('liveMatches').child($matchId).child('meta').child('scorekeeperUid').val() == auth.uid)"
+        }
+      },
+      "commentary": {
+        ".read": "auth != null",
+        "$entryId": {
+          ".write": "auth != null"
+        }
+      },
+      "presence": {
+        ".read": "auth != null",
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    }
+  }
+}
