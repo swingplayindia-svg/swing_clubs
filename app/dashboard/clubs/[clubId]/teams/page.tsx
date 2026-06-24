@@ -1,41 +1,24 @@
 "use client";
 
 import { use, useRef, useState } from "react";
+import Link from "next/link";
 import { useTeams, useMembers } from "@/hooks/use-club-data";
 import { createTeam, deleteTeam, updateTeam } from "@/lib/firestore/teams";
+import { MemberCombobox, memberUserId } from "@/components/teams/member-combobox";
+import { MemberAvatar } from "@/components/teams/member-avatar";
+import { captainPlayer, serializePlayers, syncCaptainInRoster } from "@/lib/team-players";
 import { formatDate, sportEmoji, initials } from "@/lib/utils";
-import { Plus, Trash2, Users, Trophy, X, Camera, Loader2, Edit2, Search, Star, Medal, Shield } from "lucide-react";
+import { Plus, Trash2, Users, Trophy, X, Camera, Loader2, Edit2, Search, Medal, Shield, ChevronRight, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { getFirebaseStorage } from "@/lib/firebase";
 import type { Team } from "@/lib/schemas/team";
+import { BulkTeamsImportModal } from "@/components/teams/bulk-teams-import-modal";
 
 const SPORTS = [
   "Football", "Cricket", "Padel", "Pickleball",
   "Basketball", "Badminton", "Tennis", "Hockey",
 ];
-
-const SPORT_COLORS: Record<string, string> = {
-  Football:   "from-green-500/20 to-green-500/5 border-green-500/30",
-  Cricket:    "from-amber-500/20 to-amber-500/5 border-amber-500/30",
-  Basketball: "from-orange-500/20 to-orange-500/5 border-orange-500/30",
-  Badminton:  "from-blue-500/20 to-blue-500/5 border-blue-500/30",
-  Tennis:     "from-yellow-500/20 to-yellow-500/5 border-yellow-500/30",
-  Hockey:     "from-emerald-500/20 to-emerald-500/5 border-emerald-500/30",
-  Padel:      "from-violet-500/20 to-violet-500/5 border-violet-500/30",
-  Pickleball: "from-pink-500/20 to-pink-500/5 border-pink-500/30",
-};
-
-const SPORT_ACCENT: Record<string, string> = {
-  Football:   "bg-green-500",
-  Cricket:    "bg-amber-500",
-  Basketball: "bg-orange-500",
-  Badminton:  "bg-blue-500",
-  Tennis:     "bg-yellow-500",
-  Hockey:     "bg-emerald-500",
-  Padel:      "bg-violet-500",
-  Pickleball: "bg-pink-500",
-};
 
 async function uploadTeamLogo(
   clubId: string,
@@ -120,10 +103,18 @@ function LogoPicker({
 }
 
 // ─── Create Team Modal ──────────────────────────────────────────────────────
-function CreateTeamModal({ clubId, onClose }: { clubId: string; onClose: () => void }) {
+function CreateTeamModal({
+  clubId,
+  defaultSport,
+  onClose,
+}: {
+  clubId: string;
+  defaultSport?: string;
+  onClose: () => void;
+}) {
   const { members } = useMembers(clubId);
   const [name, setName]       = useState("");
-  const [sport, setSport]     = useState(SPORTS[0]);
+  const [sport, setSport]     = useState(defaultSport ?? SPORTS[0]);
   const [captain, setCaptain] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [saving, setSaving]   = useState(false);
@@ -133,17 +124,27 @@ function CreateTeamModal({ clubId, onClose }: { clubId: string; onClose: () => v
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!captain) {
+      toast.error("Please select a captain.");
+      return;
+    }
+    const captainMember = members.find((m) => memberUserId(m) === captain);
+    if (!captainMember) {
+      toast.error("Selected captain not found.");
+      return;
+    }
     setSaving(true);
     try {
-      const captainMember = members.find((m) => m.userId === captain);
+      const cap = captainPlayer(captainMember);
       const teamId = await createTeam(clubId, {
         clubId,
         name: name.trim(),
         sport,
-        captainId:   captainMember?.userId,
-        captainName: captainMember?.displayName,
-        players:     [],
-        memberCount: 0,
+        captainId:        cap.userId,
+        captainName:      cap.displayName,
+        captainAvatarUrl: cap.avatarUrl,
+        players:          serializePlayers([cap]),
+        memberCount:      1,
         wins: 0, losses: 0, draws: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -234,18 +235,21 @@ function CreateTeamModal({ clubId, onClose }: { clubId: string; onClose: () => v
           {/* Captain */}
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-              Captain <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+              Captain <span className="text-primary">*</span>
             </label>
-            <select
-              value={captain}
-              onChange={(e) => setCaptain(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
-            >
-              <option value="">— No captain —</option>
-              {members.map((m) => (
-                <option key={m.userId} value={m.userId}>{m.displayName}</option>
-              ))}
-            </select>
+            {members.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-3 py-2.5 rounded-xl bg-muted border border-border">
+                No club members yet — add members before creating a team.
+              </p>
+            ) : (
+              <MemberCombobox
+                members={members}
+                value={captain}
+                onChange={setCaptain}
+                required
+                placeholder="Search club members…"
+              />
+            )}
           </div>
 
           {/* Actions */}
@@ -259,7 +263,7 @@ function CreateTeamModal({ clubId, onClose }: { clubId: string; onClose: () => v
             </button>
             <button
               type="submit"
-              disabled={saving || !name.trim()}
+              disabled={saving || !name.trim() || !captain || members.length === 0}
               className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {saving ? (
@@ -295,14 +299,26 @@ function EditTeamModal({ clubId, team, onClose }: { clubId: string; team: Team; 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!captain) {
+      toast.error("Please select a captain.");
+      return;
+    }
+    const captainMember = members.find((m) => memberUserId(m) === captain);
+    if (!captainMember) {
+      toast.error("Selected captain not found.");
+      return;
+    }
     setSaving(true);
     try {
-      const captainMember = members.find((m) => m.userId === captain);
+      const cap = captainPlayer(captainMember, team.players.find((p) => p.userId === captain)?.jerseyNumber ?? 1);
       const updates: Partial<Team> = {
-        name:        name.trim(),
+        name:             name.trim(),
         sport,
-        captainId:   captainMember?.userId,
-        captainName: captainMember?.displayName,
+        captainId:        cap.userId,
+        captainName:      cap.displayName,
+        captainAvatarUrl: cap.avatarUrl,
+        players:          serializePlayers(syncCaptainInRoster(team.players ?? [], team.captainId, cap)),
+        memberCount:      syncCaptainInRoster(team.players ?? [], team.captainId, cap).length,
       };
 
       if (logoFile) {
@@ -383,17 +399,16 @@ function EditTeamModal({ clubId, team, onClose }: { clubId: string; team: Team; 
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Captain</label>
-            <select
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+              Captain <span className="text-primary">*</span>
+            </label>
+            <MemberCombobox
+              members={members}
               value={captain}
-              onChange={(e) => setCaptain(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-input border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
-            >
-              <option value="">— No captain —</option>
-              {members.map((m) => (
-                <option key={m.userId} value={m.userId}>{m.displayName}</option>
-              ))}
-            </select>
+              onChange={setCaptain}
+              required
+              placeholder="Search club members…"
+            />
           </div>
 
           <div className="flex items-center gap-3 pt-1">
@@ -406,7 +421,7 @@ function EditTeamModal({ clubId, team, onClose }: { clubId: string; team: Team; 
             </button>
             <button
               type="submit"
-              disabled={saving || !name.trim()}
+              disabled={saving || !name.trim() || !captain}
               className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {saving ? (
@@ -420,212 +435,14 @@ function EditTeamModal({ clubId, team, onClose }: { clubId: string; team: Team; 
   );
 }
 
-// ─── Inline logo uploader on the team card ─────────────────────────────────
-function CardLogoUpload({
-  clubId,
-  team,
-  onUploaded,
-}: {
-  clubId: string;
-  team: Team;
-  onUploaded: (url: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [progress, setProgress] = useState<number | null>(null);
-
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) { toast.error("Please select an image."); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5 MB."); return; }
-
-    const sRef = storageRef(getFirebaseStorage(), `clubs/${clubId}/teams/${team.id}/logo`);
-    const task = uploadBytesResumable(sRef, file, { contentType: file.type });
-    task.on(
-      "state_changed",
-      (snap) => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-      () => { toast.error("Upload failed."); setProgress(null); },
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        await updateTeam(clubId, team.id, { logoUrl: url });
-        onUploaded(url);
-        setProgress(null);
-        toast.success("Team logo updated!");
-      },
-    );
-  };
-
-  return (
-    <>
-      <div
-        className="absolute inset-0 rounded-xl flex items-center justify-center cursor-pointer"
-        onClick={(e) => { e.stopPropagation(); if (progress == null) inputRef.current?.click(); }}
-      >
-        {progress != null ? (
-          <div className="flex flex-col items-center gap-0.5">
-            <Loader2 className="w-4 h-4 text-white animate-spin" />
-            <span className="text-[9px] text-white font-bold">{progress}%</span>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-0.5">
-            <Camera className="w-4 h-4 text-white" />
-            <span className="text-[9px] text-white">Change</span>
-          </div>
-        )}
-      </div>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handleFile(f);
-          e.target.value = "";
-        }}
-      />
-    </>
-  );
-}
-
-// ─── Team Card ──────────────────────────────────────────────────────────────
-function TeamCard({
-  team,
-  clubId,
-  onDelete,
-  onEdit,
-  deleting,
-}: {
-  team: Team;
-  clubId: string;
-  onDelete: () => void;
-  onEdit: () => void;
-  deleting: boolean;
-}) {
-  const [localLogoUrl, setLocalLogoUrl] = useState<string | undefined>(team.logoUrl);
-  const total   = team.wins + team.draws + team.losses;
-  const winRate = total > 0 ? Math.round((team.wins / total) * 100) : 0;
-  const accentClass = SPORT_ACCENT[team.sport] ?? "bg-primary";
-
-  return (
-    <div className="relative rounded-2xl border border-border bg-card hover:border-border/80 transition-all group overflow-hidden flex flex-col">
-      {/* Sport colour top strip */}
-      <div className={`h-[3px] w-full shrink-0 ${accentClass}`} />
-
-      <div className="p-5 flex flex-col flex-1">
-        {/* Header: logo + name + actions */}
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Hoverable logo */}
-            <div className="relative shrink-0 w-13 h-13">
-              <div className="w-13 h-13 rounded-xl overflow-hidden border border-border/60 bg-muted" style={{width:52,height:52}}>
-                {localLogoUrl ? (
-                  <img src={localLogoUrl} alt={team.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-primary/10">
-                    <span className="text-sm font-bold text-primary">{initials(team.name)}</span>
-                  </div>
-                )}
-              </div>
-              {/* Camera overlay */}
-              <div className="absolute inset-0 rounded-xl bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity" style={{width:52,height:52}}>
-                <CardLogoUpload
-                  clubId={clubId}
-                  team={{ ...team, logoUrl: localLogoUrl }}
-                  onUploaded={(url) => setLocalLogoUrl(url)}
-                />
-              </div>
-            </div>
-
-            <div className="min-w-0">
-              <p className="font-bold text-foreground text-sm leading-tight truncate">{team.name}</p>
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                {sportEmoji(team.sport)} {team.sport}
-              </span>
-            </div>
-          </div>
-
-          {/* Edit & delete — visible on hover */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            <button
-              onClick={onEdit}
-              className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition"
-              title="Edit team"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={onDelete}
-              disabled={deleting}
-              className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition disabled:opacity-50"
-              title="Delete team"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* W / D / L stats */}
-        <div className="grid grid-cols-3 gap-1.5 mb-3">
-          {([
-            { label: "W", val: team.wins,   bg: "bg-win/10",  fg: "text-win"  },
-            { label: "D", val: team.draws,  bg: "bg-draw/10", fg: "text-draw" },
-            { label: "L", val: team.losses, bg: "bg-loss/10", fg: "text-loss" },
-          ] as const).map(({ label, val, bg, fg }) => (
-            <div key={label} className={`${bg} rounded-xl py-2.5 text-center`}>
-              <p className={`text-lg font-bold score-digits ${fg}`}>{val}</p>
-              <p className="text-[10px] text-muted-foreground font-semibold tracking-wide">{label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Win-rate bar */}
-        {total > 0 ? (
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-muted-foreground">Win rate · {total} played</span>
-              <span className="text-[10px] font-bold text-foreground">{winRate}%</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full bg-win transition-all duration-700"
-                style={{ width: `${winRate}%` }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="mb-3">
-            <div className="h-1.5 rounded-full bg-muted" />
-            <p className="text-[10px] text-muted-foreground mt-1">No matches played yet</p>
-          </div>
-        )}
-
-        {/* Footer info */}
-        <div className="mt-auto flex items-center gap-3 flex-wrap pt-1">
-          {team.captainName && (
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-              <span>{team.captainName}</span>
-            </div>
-          )}
-          {team.memberCount > 0 && (
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Users className="w-3 h-3" />
-              <span>{team.memberCount} players</span>
-            </div>
-          )}
-          <span className="text-[11px] text-muted-foreground ml-auto">
-            {formatDate(team.createdAt)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Page ───────────────────────────────────────────────────────────────────
 export default function TeamsPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId }      = use(params);
   const { teams }       = useTeams(clubId);
+  const { members }     = useMembers(clubId);
   const [showCreate,    setShowCreate]  = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [createSport,   setCreateSport] = useState<string | undefined>();
   const [editingTeam,   setEditingTeam] = useState<Team | null>(null);
   const [search,        setSearch]      = useState("");
   const [sportFilter,   setSportFilter] = useState("all");
@@ -633,21 +450,21 @@ export default function TeamsPage({ params }: { params: Promise<{ clubId: string
 
   const sports   = Array.from(new Set(teams.map((t) => t.sport)));
   const filtered = teams.filter((t) => {
-    const matchSearch = t.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) ||
+      t.captainName?.toLowerCase().includes(search.toLowerCase());
     const matchSport  = sportFilter === "all" || t.sport === sportFilter;
     return matchSearch && matchSport;
   });
 
-  // Group by sport for display
-  const grouped = filtered.reduce<Record<string, Team[]>>((acc, team) => {
-    (acc[team.sport] ??= []).push(team);
-    return acc;
-  }, {});
+  const sorted = [...filtered].sort((a, b) => {
+    const sportCmp = a.sport.localeCompare(b.sport);
+    if (sportCmp !== 0) return sportCmp;
+    return a.name.localeCompare(b.name);
+  });
 
   const totalWins   = teams.reduce((s, t) => s + t.wins,   0);
   const totalDraws  = teams.reduce((s, t) => s + t.draws,  0);
   const totalLosses = teams.reduce((s, t) => s + t.losses, 0);
-  const totalPlayed = totalWins + totalDraws + totalLosses;
 
   const handleDelete = async (team: Team) => {
     if (!confirm(`Delete "${team.name}"? This cannot be undone.`)) return;
@@ -665,8 +482,22 @@ export default function TeamsPage({ params }: { params: Promise<{ clubId: string
   return (
     <div className="space-y-6">
       {/* Modals */}
-      {showCreate  && <CreateTeamModal clubId={clubId} onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateTeamModal
+          clubId={clubId}
+          defaultSport={createSport}
+          onClose={() => { setShowCreate(false); setCreateSport(undefined); }}
+        />
+      )}
       {editingTeam && <EditTeamModal  clubId={clubId} team={editingTeam} onClose={() => setEditingTeam(null)} />}
+      {showBulkImport && (
+        <BulkTeamsImportModal
+          clubId={clubId}
+          members={members}
+          existingTeams={teams}
+          onClose={() => setShowBulkImport(false)}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -676,13 +507,22 @@ export default function TeamsPage({ params }: { params: Promise<{ clubId: string
             {teams.length} {teams.length === 1 ? "team" : "teams"} across {sports.length} {sports.length === 1 ? "sport" : "sports"}
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 active:scale-95 transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          New Team
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkImport(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-card text-sm font-semibold text-foreground hover:bg-accent transition"
+          >
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </button>
+          <button
+            onClick={() => { setCreateSport(sportFilter === "all" ? undefined : sportFilter); setShowCreate(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 active:scale-95 transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            New Team
+          </button>
+        </div>
       </div>
 
       {/* Stats overview strip */}
@@ -739,79 +579,167 @@ export default function TeamsPage({ params }: { params: Promise<{ clubId: string
         </div>
       </div>
 
-      {/* Empty state */}
-      {filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card/50 flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-            <Trophy className="w-7 h-7 text-muted-foreground" />
+      {/* Teams table */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40">
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Team</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Sport</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Captain</th>
+                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Players</th>
+                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-3">W</th>
+                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-3">D</th>
+                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-3">L</th>
+                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Win %</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden xl:table-cell">Created</th>
+                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="text-center py-16">
+                    <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+                      <Trophy className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <p className="font-semibold text-foreground">
+                      {teams.length === 0 ? "No teams yet" : "No teams match your search"}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1 mb-5">
+                      {teams.length === 0
+                        ? "Create your first team to start building squads."
+                        : "Try a different sport filter or search term."}
+                    </p>
+                    {teams.length === 0 && (
+                      <button
+                        onClick={() => { setCreateSport(sportFilter === "all" ? undefined : sportFilter); setShowCreate(true); }}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Create First Team
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                sorted.map((team) => {
+                  const total = team.wins + team.draws + team.losses;
+                  const winRate = total > 0 ? Math.round((team.wins / total) * 100) : 0;
+                  const playerCount = team.memberCount || team.players?.length || 0;
+
+                  return (
+                    <tr key={team.id} className="group hover:bg-accent/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/dashboard/clubs/${clubId}/teams/${team.id}`}
+                          className="flex items-center gap-3 min-w-0"
+                        >
+                          <div className="w-9 h-9 rounded-lg overflow-hidden border border-border bg-muted shrink-0">
+                            {team.logoUrl ? (
+                              <img src={team.logoUrl} alt={team.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-primary/10">
+                                <span className="text-xs font-bold text-primary">{initials(team.name)}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                              {team.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground sm:hidden">
+                              {sportEmoji(team.sport)} {team.sport}
+                            </p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
+                          {sportEmoji(team.sport)} {team.sport}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        {team.captainName ? (
+                          <div className="flex items-center gap-2 min-w-0">
+                            <MemberAvatar
+                              name={team.captainName}
+                              avatarUrl={team.captainAvatarUrl}
+                              size="sm"
+                            />
+                            <span className="text-sm text-foreground truncate">{team.captainName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center hidden lg:table-cell">
+                        <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                          <Users className="w-3.5 h-3.5" />
+                          {playerCount}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-bold score-digits text-win">{team.wins}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-bold score-digits text-draw">{team.draws}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-bold score-digits text-loss">{team.losses}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center hidden md:table-cell">
+                        {total > 0 ? (
+                          <span className="text-sm font-semibold text-foreground">{winRate}%</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs hidden xl:table-cell whitespace-nowrap">
+                        {formatDate(team.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button
+                            onClick={() => setEditingTeam(team)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition"
+                            title="Edit team"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(team)}
+                            disabled={deleting === team.id}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition disabled:opacity-50"
+                            title="Delete team"
+                          >
+                            {deleting === team.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {sorted.length > 0 && (
+          <div className="px-4 py-3 border-t border-border bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Showing {sorted.length} of {teams.length} {teams.length === 1 ? "team" : "teams"}
+            </span>
+            <span>Click a team row to manage squad &amp; settings</span>
           </div>
-          <p className="text-foreground font-semibold text-base">
-            {teams.length === 0 ? "No teams yet" : "No teams match your search"}
-          </p>
-          <p className="text-sm text-muted-foreground mt-1 mb-5">
-            {teams.length === 0
-              ? "Create your first team and add a logo — it will instantly appear in the iOS app."
-              : "Try a different sport filter or search term."}
-          </p>
-          {teams.length === 0 && (
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Create First Team
-            </button>
-          )}
-        </div>
-      ) : (
-        /* Grouped by sport */
-        <div className="space-y-8 pb-4">
-          {Object.entries(grouped).map(([sport, sportTeams]) => (
-            <section key={sport}>
-              {/* Sport section header */}
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="text-xl leading-none">{sportEmoji(sport)}</span>
-                <h2 className="text-sm font-bold text-foreground">{sport}</h2>
-                <div className="h-px flex-1 bg-border/60" />
-                <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full font-medium">
-                  {sportTeams.length} {sportTeams.length === 1 ? "team" : "teams"}
-                </span>
-              </div>
-
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sportTeams.map((team) => (
-                  <TeamCard
-                    key={team.id}
-                    team={team}
-                    clubId={clubId}
-                    onDelete={() => handleDelete(team)}
-                    onEdit={() => setEditingTeam(team)}
-                    deleting={deleting === team.id}
-                  />
-                ))}
-
-                {/* "Add team" ghost card */}
-                <button
-                  onClick={() => { setSportFilter(sport); setShowCreate(true); }}
-                  className="rounded-2xl border border-dashed border-border bg-card/30 hover:bg-card hover:border-primary/30 transition group flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground hover:text-primary"
-                >
-                  <div className="w-10 h-10 rounded-xl border-2 border-dashed border-current flex items-center justify-center">
-                    <Plus className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs font-medium">Add {sport} team</span>
-                </button>
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
-
-      {/* Bottom hint */}
-      {teams.length > 0 && (
-        <p className="text-[11px] text-muted-foreground text-center pb-2">
-          Hover a team card to change its logo · changes sync to the iOS app instantly
-        </p>
-      )}
+        )}
+      </div>
     </div>
   );
 }

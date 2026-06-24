@@ -14,6 +14,7 @@ export interface Team {
   sport: string;
   captainId?: string;
   captainName?: string;
+  captainAvatarUrl?: string;
   logoUrl?: string;
   players: TeamPlayer[];
   memberCount: number;

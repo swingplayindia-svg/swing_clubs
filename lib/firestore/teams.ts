@@ -1,15 +1,39 @@
 "use client";
 
 import {
-  addDoc, collection, deleteDoc, doc, getDocs,
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs,
   onSnapshot, orderBy, query, updateDoc, where, type Unsubscribe,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
 import type { Team } from "@/lib/schemas/team";
+import { stripUndefined } from "@/lib/firestore/sanitize";
 
 function teamsRef(clubId: string, tournamentId?: string) {
   if (tournamentId) return collection(getDb(), "clubs", clubId, "tournaments", tournamentId, "teams");
   return collection(getDb(), "clubs", clubId, "teams");
+}
+
+export async function getTeam(clubId: string, teamId: string, tournamentId?: string): Promise<Team | null> {
+  const ref = tournamentId
+    ? doc(getDb(), "clubs", clubId, "tournaments", tournamentId, "teams", teamId)
+    : doc(getDb(), "clubs", clubId, "teams", teamId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as Team;
+}
+
+export function subscribeTeam(
+  clubId: string,
+  teamId: string,
+  cb: (team: Team | null) => void,
+  tournamentId?: string,
+): Unsubscribe {
+  const ref = tournamentId
+    ? doc(getDb(), "clubs", clubId, "tournaments", tournamentId, "teams", teamId)
+    : doc(getDb(), "clubs", clubId, "teams", teamId);
+  return onSnapshot(ref, (snap) => {
+    cb(snap.exists() ? ({ id: snap.id, ...snap.data() } as Team) : null);
+  });
 }
 
 export async function getTeams(clubId: string, tournamentId?: string): Promise<Team[]> {
@@ -24,7 +48,8 @@ export function subscribeTeams(clubId: string, cb: (teams: Team[]) => void, tour
 }
 
 export async function createTeam(clubId: string, data: Omit<Team, "id">, tournamentId?: string): Promise<string> {
-  const ref = await addDoc(teamsRef(clubId, tournamentId), { ...data, createdAt: Date.now(), updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, createdAt: Date.now(), updatedAt: Date.now() } as Record<string, unknown>);
+  const ref = await addDoc(teamsRef(clubId, tournamentId), payload);
   return ref.id;
 }
 
@@ -32,7 +57,8 @@ export async function updateTeam(clubId: string, teamId: string, data: Partial<T
   const ref = tournamentId
     ? doc(getDb(), "clubs", clubId, "tournaments", tournamentId, "teams", teamId)
     : doc(getDb(), "clubs", clubId, "teams", teamId);
-  await updateDoc(ref, { ...data, updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, updatedAt: Date.now() } as Record<string, unknown>);
+  await updateDoc(ref, payload);
 }
 
 export async function deleteTeam(clubId: string, teamId: string, tournamentId?: string): Promise<void> {

@@ -1,9 +1,10 @@
 "use client";
 
 import {
-  addDoc, collection, doc, getDocs, onSnapshot,
+  addDoc, collection, doc, getDoc, getDocs, onSnapshot,
   orderBy, query, updateDoc, type Unsubscribe,
 } from "firebase/firestore";
+import { stripUndefined } from "@/lib/firestore/sanitize";
 import { getDb } from "@/lib/firebase";
 import type { Tournament, TopPlayer } from "@/lib/schemas/tournament";
 
@@ -22,13 +23,32 @@ export function subscribeTournaments(clubId: string, cb: (tournaments: Tournamen
   });
 }
 
+export function subscribeTournament(
+  clubId: string,
+  tournamentId: string,
+  cb: (tournament: Tournament | null) => void,
+): Unsubscribe {
+  const ref = doc(getDb(), "clubs", clubId, "tournaments", tournamentId);
+  return onSnapshot(ref, (snap) => {
+    cb(snap.exists() ? ({ id: snap.id, ...snap.data() } as Tournament) : null);
+  });
+}
+
+export async function getTournament(clubId: string, tournamentId: string): Promise<Tournament | null> {
+  const snap = await getDoc(doc(getDb(), "clubs", clubId, "tournaments", tournamentId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as Tournament;
+}
+
 export async function createTournament(clubId: string, data: Omit<Tournament, "id">): Promise<string> {
-  const ref = await addDoc(tournamentsRef(clubId), { ...data, createdAt: Date.now(), updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, createdAt: Date.now(), updatedAt: Date.now() } as Record<string, unknown>);
+  const ref = await addDoc(tournamentsRef(clubId), payload);
   return ref.id;
 }
 
 export async function updateTournament(clubId: string, tournamentId: string, data: Partial<Tournament>): Promise<void> {
-  await updateDoc(doc(getDb(), "clubs", clubId, "tournaments", tournamentId), { ...data, updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, updatedAt: Date.now() } as Record<string, unknown>);
+  await updateDoc(doc(getDb(), "clubs", clubId, "tournaments", tournamentId), payload);
 }
 
 export async function getTopPlayers(clubId: string, tournamentId: string): Promise<TopPlayer[]> {

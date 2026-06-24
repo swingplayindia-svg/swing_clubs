@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { subscribeClub, subscribeMembers, subscribeJoinRequests } from "@/lib/firestore/clubs";
-import { subscribeTeams } from "@/lib/firestore/teams";
+import { subscribeTeams, subscribeTeam } from "@/lib/firestore/teams";
 import { subscribeMatches, subscribeLiveMatches } from "@/lib/firestore/matches";
-import { subscribeTournaments } from "@/lib/firestore/tournaments";
+import { subscribeTournaments, subscribeTournament } from "@/lib/firestore/tournaments";
 import { subscribeStandings } from "@/lib/firestore/standings";
 import { subscribeNews } from "@/lib/firestore/news";
 import type { Club, ClubMember, JoinRequest } from "@/lib/schemas/club";
@@ -55,6 +55,19 @@ export function useTeams(clubId: string | null, tournamentId?: string) {
   return { teams };
 }
 
+export function useTeam(clubId: string | null, teamId: string | null, tournamentId?: string) {
+  const [team, setTeam] = useState<Team | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!clubId || !teamId) { setIsLoading(false); return; }
+    setIsLoading(true);
+    return subscribeTeam(clubId, teamId, (t) => { setTeam(t); setIsLoading(false); }, tournamentId);
+  }, [clubId, teamId, tournamentId]);
+
+  return { team, isLoading };
+}
+
 export function useMatches(clubId: string | null, tournamentId?: string) {
   const [matches, setMatches] = useState<Match[]>([]);
   useEffect(() => {
@@ -80,6 +93,22 @@ export function useTournaments(clubId: string | null) {
     return subscribeTournaments(clubId, setTournaments);
   }, [clubId]);
   return { tournaments };
+}
+
+export function useTournament(clubId: string | null, tournamentId: string | null) {
+  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!clubId || !tournamentId) { setIsLoading(false); return; }
+    setIsLoading(true);
+    return subscribeTournament(clubId, tournamentId, (t) => {
+      setTournament(t);
+      setIsLoading(false);
+    });
+  }, [clubId, tournamentId]);
+
+  return { tournament, isLoading };
 }
 
 export function useStandings(clubId: string | null, tournamentId?: string) {

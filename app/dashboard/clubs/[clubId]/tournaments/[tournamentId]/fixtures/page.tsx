@@ -3,6 +3,7 @@
 import { use, useState } from "react";
 import { useTeams, useMatches } from "@/hooks/use-club-data";
 import { createMatch } from "@/lib/firestore/matches";
+import { updateTournament } from "@/lib/firestore/tournaments";
 import { formatDate, formatTime } from "@/lib/utils";
 import { Wand2, Plus, Calendar } from "lucide-react";
 import { toast } from "sonner";
@@ -50,6 +51,9 @@ export default function TournamentFixturesPage({ params }: { params: Promise<{ c
           }, tournamentId),
         ),
       );
+      await updateTournament(clubId, tournamentId, {
+        matchCount: matches.length + pairs.length,
+      });
       toast.success(`Generated ${pairs.length} fixtures.`);
     } catch {
       toast.error("Failed to generate fixtures.");

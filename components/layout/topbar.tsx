@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
+import { useTournament } from "@/hooks/use-club-data";
 import type { Club } from "@/lib/schemas/club";
 
 interface TopbarProps {
@@ -30,6 +31,10 @@ export function Topbar({ club, extraCrumbs = [], actions }: TopbarProps) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
 
+  const tournamentIdMatch = pathname.match(/\/tournaments\/([^/]+)/);
+  const tournamentId = tournamentIdMatch?.[1] ?? null;
+  const { tournament } = useTournament(club?.id ?? null, tournamentId);
+
   const crumbs: { label: string; href?: string }[] = [];
 
   if (club) {
@@ -39,6 +44,7 @@ export function Topbar({ club, extraCrumbs = [], actions }: TopbarProps) {
   // Parse path segments
   let afterClub        = false;
   let afterTournament  = false;
+  let afterTeams       = false;
 
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
@@ -49,7 +55,20 @@ export function Topbar({ club, extraCrumbs = [], actions }: TopbarProps) {
       afterTournament = true;
       continue;
     }
-    if (afterTournament && !pathLabels[seg]) continue; // skip tournament ID
+    if (afterTournament && seg === tournamentId && tournament) {
+      crumbs.push({
+        label: tournament.name,
+        href: `/dashboard/clubs/${club?.id}/tournaments/${tournamentId}`,
+      });
+      continue;
+    }
+    if (afterTournament && !pathLabels[seg]) continue;
+    if (seg === "teams") {
+      crumbs.push({ label: "Teams", href: `/dashboard/clubs/${club?.id}/teams` });
+      afterTeams = true;
+      continue;
+    }
+    if (afterTeams && !pathLabels[seg]) { afterTeams = false; continue; } // skip team ID
     const label = pathLabels[seg];
     if (label) crumbs.push({ label });
   }
