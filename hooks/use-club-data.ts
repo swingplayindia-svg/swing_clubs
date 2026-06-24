@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { subscribeClub, subscribeMembers, subscribeJoinRequests } from "@/lib/firestore/clubs";
 import { subscribeTeams, subscribeTeam } from "@/lib/firestore/teams";
-import { subscribeMatches, subscribeLiveMatches } from "@/lib/firestore/matches";
+import { subscribeMatches, subscribeMatch, subscribeLiveMatches } from "@/lib/firestore/matches";
 import { subscribeTournaments, subscribeTournament } from "@/lib/firestore/tournaments";
 import { subscribeStandings } from "@/lib/firestore/standings";
 import { subscribeNews } from "@/lib/firestore/news";
@@ -75,6 +75,19 @@ export function useMatches(clubId: string | null, tournamentId?: string) {
     return subscribeMatches(clubId, setMatches, tournamentId);
   }, [clubId, tournamentId]);
   return { matches };
+}
+
+export function useMatch(clubId: string | null, matchId: string | null, tournamentId?: string) {
+  const [match, setMatch] = useState<Match | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!clubId || !matchId) { setIsLoading(false); return; }
+    setIsLoading(true);
+    return subscribeMatch(clubId, matchId, (m) => { setMatch(m); setIsLoading(false); }, tournamentId);
+  }, [clubId, matchId, tournamentId]);
+
+  return { match, isLoading };
 }
 
 export function useLiveMatches(clubId: string | null) {

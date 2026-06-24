@@ -5,6 +5,7 @@ import {
   normalizeMatchForLive,
   resolveMatch,
 } from "@/lib/server/matches";
+import { buildInitialLineups } from "@/lib/server/lineup-seed";
 
 type StartMatchBody = {
   clubId: string;
@@ -45,6 +46,17 @@ export async function POST(
     const now = Date.now();
     await resolved.ref.update({ status: "live", updatedAt: now });
 
+    const lineups = await buildInitialLineups(
+      db,
+      live.clubId,
+      live.sport,
+      live.homeTeamId,
+      live.homeTeamName,
+      live.awayTeamId,
+      live.awayTeamName,
+      live.tournamentId,
+    );
+
     await rtdb.ref(`liveMatches/${matchId}/meta`).set({
       status:           "live",
       sport:            live.sport,
@@ -56,8 +68,8 @@ export async function POST(
       awayScore:        0,
       period:           "pre",
       clock:            0,
-      scorekeeperUid:   null,
-      scorekeeperName:  null,
+      scorekeeperUid:   decoded.uid,
+      scorekeeperName:  decoded.name ?? decoded.email ?? null,
       clubId:           live.clubId,
       tournamentId:     live.tournamentId,
       firestoreMatchId: matchId,
@@ -65,6 +77,8 @@ export async function POST(
       startedAt:        now,
       updatedAt:        now,
     });
+
+    await rtdb.ref(`liveMatches/${matchId}/lineups`).set(lineups);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

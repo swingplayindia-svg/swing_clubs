@@ -5,6 +5,7 @@ import {
   orderBy, query, updateDoc, where, type Unsubscribe, getDoc,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { stripUndefined } from "@/lib/firestore/sanitize";
 import type { Match } from "@/lib/schemas/match";
 
 function matchesRef(clubId: string, tournamentId?: string) {
@@ -24,6 +25,20 @@ export async function getMatch(clubId: string, matchId: string, tournamentId?: s
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() } as Match;
+}
+
+export function subscribeMatch(
+  clubId: string,
+  matchId: string,
+  cb: (match: Match | null) => void,
+  tournamentId?: string,
+): Unsubscribe {
+  const ref = tournamentId
+    ? doc(getDb(), "clubs", clubId, "tournaments", tournamentId, "matches", matchId)
+    : doc(getDb(), "clubs", clubId, "matches", matchId);
+  return onSnapshot(ref, (snap) => {
+    cb(snap.exists() ? ({ id: snap.id, ...snap.data() } as Match) : null);
+  });
 }
 
 export function subscribeMatches(clubId: string, cb: (matches: Match[]) => void, tournamentId?: string): Unsubscribe {
@@ -47,7 +62,8 @@ export async function updateMatch(clubId: string, matchId: string, data: Partial
   const ref = tournamentId
     ? doc(getDb(), "clubs", clubId, "tournaments", tournamentId, "matches", matchId)
     : doc(getDb(), "clubs", clubId, "matches", matchId);
-  await updateDoc(ref, { ...data, updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, updatedAt: Date.now() } as Record<string, unknown>);
+  await updateDoc(ref, payload);
 }
 
 export async function getUpcomingMatches(clubId: string, days = 7): Promise<Match[]> {

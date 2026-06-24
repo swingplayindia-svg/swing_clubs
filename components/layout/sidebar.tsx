@@ -17,6 +17,7 @@ import {
   Sun,
   Swords,
   ChevronsUpDown,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-provider";
@@ -25,7 +26,7 @@ import type { Club } from "@/lib/schemas/club";
 interface NavItem {
   label: string;
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   badge?: number;
 }
 
@@ -207,6 +208,43 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-5 scrollbar-thin">
+        {/* Global platform link — always visible */}
+        <div>
+          <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/80">
+            Platform
+          </p>
+          <ul className="space-y-0.5">
+            {[{ label: "App Settings", href: "/dashboard/app", icon: Zap }].map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-150",
+                      isActive
+                        ? "bg-primary/10 text-primary font-semibold shadow-[inset_3px_0_0_0_var(--sidebar-primary)]"
+                        : "text-muted-foreground font-medium hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex items-center justify-center w-7 h-7 rounded-md shrink-0 transition-colors",
+                        isActive
+                          ? "bg-primary/15 text-primary"
+                          : "bg-transparent text-muted-foreground group-hover:bg-sidebar-accent group-hover:text-sidebar-foreground",
+                      )}
+                    >
+                      <item.icon className="w-[15px] h-[15px]" strokeWidth={isActive ? 2.25 : 2} />
+                    </span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
         {sections.length === 0 ? (
           <div className="mx-2 rounded-xl border border-dashed border-sidebar-border px-4 py-8 text-center">
             <p className="text-xs font-medium text-muted-foreground">Select a club to get started</p>

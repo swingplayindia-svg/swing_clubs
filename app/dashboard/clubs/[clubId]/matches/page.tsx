@@ -2,11 +2,12 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMatches, useTeams } from "@/hooks/use-club-data";
 import { createMatch } from "@/lib/firestore/matches";
 import { startMatchLive } from "@/lib/start-match";
 import { formatDate, formatTime, sportEmoji } from "@/lib/utils";
-import { Plus, Radio, Check, Clock, X, Calendar as CalIcon } from "lucide-react";
+import { Plus, Radio, Check, Clock, X, Calendar as CalIcon, ChevronRight, Film } from "lucide-react";
 import { toast } from "sonner";
 import type { MatchStatus } from "@/lib/schemas/match";
 
@@ -123,6 +124,7 @@ function CreateMatchModal({ clubId, onClose }: { clubId: string; onClose: () => 
 
 export default function MatchesPage({ params }: { params: Promise<{ clubId: string }> }) {
   const { clubId }      = use(params);
+  const router          = useRouter();
   const { matches }     = useMatches(clubId);
   const [showCreate,    setShowCreate]   = useState(false);
   const [statusFilter,  setStatusFilter] = useState<MatchStatus | "all">("all");
@@ -181,7 +183,16 @@ export default function MatchesPage({ params }: { params: Promise<{ clubId: stri
       ) : (
         <div className="space-y-3">
           {sorted.map((match) => (
-            <div key={match.id} className={`rounded-xl border bg-card p-4 flex items-center gap-4 transition ${match.status === "live" ? "border-primary/40 bg-primary/5" : "border-border"}`}>
+            <div
+              key={match.id}
+              role="link"
+              tabIndex={0}
+              onClick={() => router.push(`/dashboard/clubs/${clubId}/matches/${match.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") router.push(`/dashboard/clubs/${clubId}/matches/${match.id}`);
+              }}
+              className={`rounded-xl border bg-card p-4 flex items-center gap-4 transition hover:border-primary/30 hover:shadow-sm group cursor-pointer ${match.status === "live" ? "border-primary/40 bg-primary/5" : "border-border"}`}
+            >
               {/* Date */}
               <div className="text-center w-12 shrink-0">
                 <p className="text-xs text-muted-foreground">{new Date(match.matchDate).toLocaleDateString("en", { month: "short" })}</p>
@@ -209,20 +220,33 @@ export default function MatchesPage({ params }: { params: Promise<{ clubId: stri
                   </div>
                 </div>
                 {match.venue && <p className="text-xs text-muted-foreground mt-1">📍 {match.venue}</p>}
+                {(match.highlights?.length ?? 0) > 0 && (
+                  <p className="text-[10px] text-muted-foreground mt-1 inline-flex items-center gap-1">
+                    <Film className="w-3 h-3" /> {match.highlights!.length} highlight{match.highlights!.length !== 1 ? "s" : ""}
+                  </p>
+                )}
+                {match.manOfTheMatchName && (
+                  <p className="text-[10px] text-primary mt-0.5">★ {match.manOfTheMatchName}</p>
+                )}
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                 {match.status === "live" && (
-                  <Link href={`/dashboard/live/${match.id}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 transition">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/dashboard/live/${match.id}`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 transition"
+                  >
                     <Radio className="w-3 h-3" /> Control
-                  </Link>
+                  </button>
                 )}
                 {match.status === "scheduled" && (
-                  <button onClick={() => handleGoLive(match)} disabled={starting === match.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-bold hover:bg-primary/10 transition disabled:opacity-50">
+                  <button type="button" onClick={() => void handleGoLive(match)} disabled={starting === match.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-bold hover:bg-primary/10 transition disabled:opacity-50">
                     <Radio className="w-3 h-3" /> {starting === match.id ? "Starting…" : "Go Live"}
                   </button>
                 )}
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition" />
               </div>
             </div>
           ))}
