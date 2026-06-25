@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  addDoc, collection, deleteDoc, doc, getDocs,
+  addDoc, collection, deleteDoc, deleteField, doc, getDocs,
   onSnapshot, orderBy, query, updateDoc, type Unsubscribe,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
@@ -26,9 +26,20 @@ export async function createNewsPost(clubId: string, data: Omit<NewsPost, "id">)
   return ref.id;
 }
 
-export async function updateNewsPost(clubId: string, postId: string, data: Partial<NewsPost>): Promise<void> {
-  const payload = stripUndefined({ ...data, updatedAt: Date.now() } as Record<string, unknown>);
-  await updateDoc(doc(getDb(), "clubs", clubId, "news", postId), payload);
+export async function updateNewsPost(
+  clubId: string,
+  postId: string,
+  data: Partial<NewsPost> & { imageUrl?: string | null },
+): Promise<void> {
+  const { imageUrl, ...rest } = data;
+  const payload: Record<string, unknown> = { ...rest, updatedAt: Date.now() };
+  if (imageUrl === null) {
+    payload.imageUrl = deleteField();
+  } else if (imageUrl !== undefined) {
+    payload.imageUrl = imageUrl;
+  }
+  const cleaned = stripUndefined(payload);
+  await updateDoc(doc(getDb(), "clubs", clubId, "news", postId), cleaned);
 }
 
 export async function deleteNewsPost(clubId: string, postId: string): Promise<void> {

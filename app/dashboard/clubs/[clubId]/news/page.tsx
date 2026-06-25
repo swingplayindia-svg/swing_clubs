@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { useNews } from "@/hooks/use-club-data";
 import { useAuth } from "@/hooks/use-auth";
 import { createNewsPost, deleteNewsPost, updateNewsPost } from "@/lib/firestore/news";
+import { NewsImageUpload } from "@/components/news/news-image-upload";
 import { formatDate } from "@/lib/utils";
 import type { NewsPost } from "@/lib/schemas/news";
 import { Plus, Pin, Trash2, Edit3, X, Heart, ThumbsDown, Loader2 } from "lucide-react";
@@ -22,31 +23,33 @@ function PostModal({
   const isEdit = Boolean(post);
   const [title, setTitle] = useState(post?.title ?? "");
   const [body, setBody] = useState(post?.body ?? "");
-  const [imageUrl, setImageUrl] = useState(post?.imageUrl ?? "");
+  const [imageUrl, setImageUrl] = useState<string | null>(post?.imageUrl ?? null);
   const [tags, setTags] = useState(post?.tags?.join(", ") ?? "");
   const [pinned, setPinned] = useState(post?.pinned ?? false);
   const [saving, setSaving] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
 
   useEffect(() => {
     if (!post) return;
     setTitle(post.title);
     setBody(post.body);
-    setImageUrl(post.imageUrl ?? "");
+    setImageUrl(post.imageUrl ?? null);
     setTags(post.tags?.join(", ") ?? "");
     setPinned(post.pinned);
   }, [post]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !body.trim() || !user) return;
+    if (!title.trim() || !body.trim() || !user || imageUploading) return;
     setSaving(true);
     try {
       const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const imagePayload = imageUrl?.trim() || null;
       if (isEdit && post) {
         await updateNewsPost(clubId, post.id, {
           title: title.trim(),
           body: body.trim(),
-          imageUrl: imageUrl.trim() || undefined,
+          imageUrl: imagePayload,
           tags: tagList,
           pinned,
         });
@@ -56,7 +59,7 @@ function PostModal({
           clubId,
           title: title.trim(),
           body: body.trim(),
-          imageUrl: imageUrl.trim() || undefined,
+          imageUrl: imagePayload || undefined,
           tags: tagList,
           authorId: user.uid,
           authorName: user.displayName,
@@ -109,12 +112,15 @@ function PostModal({
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Image URL (optional)</label>
-            <input
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="https://…"
-              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+              Cover image
+            </label>
+            <NewsImageUpload
+              clubId={clubId}
+              postId={post?.id}
+              value={imageUrl ?? undefined}
+              onChange={setImageUrl}
+              onUploadingChange={setImageUploading}
             />
           </div>
           <div>
@@ -141,7 +147,7 @@ function PostModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !title.trim() || !body.trim()}
+              disabled={saving || imageUploading || !title.trim() || !body.trim()}
               className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition disabled:opacity-50"
             >
               {saving ? (isEdit ? "Saving…" : "Publishing…") : isEdit ? "Save changes" : "Publish"}
