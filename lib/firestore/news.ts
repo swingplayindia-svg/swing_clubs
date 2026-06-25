@@ -5,6 +5,7 @@ import {
   onSnapshot, orderBy, query, updateDoc, type Unsubscribe,
 } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";
+import { stripUndefined } from "@/lib/firestore/sanitize";
 import type { NewsPost } from "@/lib/schemas/news";
 
 function newsRef(clubId: string) { return collection(getDb(), "clubs", clubId, "news"); }
@@ -26,7 +27,8 @@ export async function createNewsPost(clubId: string, data: Omit<NewsPost, "id">)
 }
 
 export async function updateNewsPost(clubId: string, postId: string, data: Partial<NewsPost>): Promise<void> {
-  await updateDoc(doc(getDb(), "clubs", clubId, "news", postId), { ...data, updatedAt: Date.now() });
+  const payload = stripUndefined({ ...data, updatedAt: Date.now() } as Record<string, unknown>);
+  await updateDoc(doc(getDb(), "clubs", clubId, "news", postId), payload);
 }
 
 export async function deleteNewsPost(clubId: string, postId: string): Promise<void> {
